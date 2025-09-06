@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Blueberry Cake with 24 Candles</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      background: #f5f5fa;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      color: #4b2e83;
+      margin-top: 1em;
+    }
+    #cake-container {
+      margin: 2em auto 1em auto;
+      display: inline-block;
+      position: relative;
+    }
+    #instructions {
+      font-size: 1.2em;
+      color: #333;
+      margin-bottom: 1em;
+    }
+    .mic-status {
+      margin: 1em 0;
+      font-weight: bold;
+      color: #0a7ea4;
+    }
+    #cake-svg {
+      width: 500px;
+      height: 400px;
+      max-width: 98vw;
+    }
+    @media (max-width: 600px) {
+      #cake-svg {
+        width: 98vw;
+        height: 75vw;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>🎂 Blow Out the Blueberry Cake!</h1>
+  <div id="instructions">
+    Allow microphone access and <b>blow into your mic</b> to extinguish the candles.<br>
+    (Or say "puff!" if you don't want to blow)
+  </div>
+  <div class="mic-status" id="mic-status">Microphone: <span id="mic-indicator">🔴 Not Ready</span></div>
+  <div id="cake-container">
+    <svg id="cake-svg" viewBox="0 0 500 400">
+      <!-- Cake base -->
+      <ellipse cx="250" cy="280" rx="140" ry="60" fill="#e4b4c2" />
+      <ellipse cx="250" cy="230" rx="130" ry="50" fill="#c5e1f9" />
+      <ellipse cx="250" cy="180" rx="120" ry="45" fill="#a677b9" />
+      <!-- Blueberries -->
+      <g id="blueberries">
+        <circle cx="200" cy="170" r="13" fill="#4a61a8" />
+        <circle cx="270" cy="160" r="12" fill="#5567b8" />
+        <circle cx="320" cy="185" r="10" fill="#5a6fc1" />
+        <circle cx="180" cy="200" r="11" fill="#3b5190" />
+        <circle cx="250" cy="180" r="14" fill="#4a61a8" />
+        <circle cx="230" cy="165" r="10" fill="#6b7fc8" />
+        <circle cx="280" cy="190" r="9" fill="#2f3e6c" />
+        <circle cx="210" cy="200" r="8" fill="#3b5190" />
+        <circle cx="300" cy="170" r="11" fill="#4a61a8" />
+      </g>
+      <!-- Candles (dynamically drawn) -->
+      <g id="candles"></g>
+    </svg>
+  </div>
+  <div style="margin-top: 2em; font-size: 0.95em; color: #555;">
+    Made with 🍰 and 💙 by sakshiii2903-lgtm
+  </div>
+  <script>
+    // Draw 24 candles evenly spaced around the top ellipse
+    const NUM_CANDLES = 24;
+    const candlesGroup = document.getElementById('candles');
+    const candleData = [];
+    const ellipse = {cx: 250, cy: 180, rx: 120, ry: 45};
+    for (let i = 0; i < NUM_CANDLES; i++) {
+      // Place candles around ellipse
+      const angle = (Math.PI * 2) * (i / NUM_CANDLES);
+      const x = ellipse.cx + ellipse.rx * Math.cos(angle) * 0.95;
+      const y = ellipse.cy + ellipse.ry * Math.sin(angle) * 0.9;
+      candleData.push({x, y});
+      // Candle SVG
+      const candle = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      candle.setAttribute("class", "candle");
+      candle.setAttribute("data-index", i);
+      candle.innerHTML = `
+        <rect x="${x-4}" y="${y-30}" width="8" height="22" rx="2.5" fill="#ffe7aa" stroke="#cfcfcf" stroke-width="1"/>
+        <ellipse cx="${x}" cy="${y-32}" rx="4" ry="2.5" fill="#eec971" />
+        <circle class="flame" cx="${x}" cy="${y-37}" r="5" fill="gold" stroke="#f9d776" stroke-width="2" />
+        <ellipse class="glow" cx="${x}" cy="${y-37}" rx="9" ry="6" fill="yellow" opacity="0.25"/>
+      `;
+      candlesGroup.appendChild(candle);
+    }
+
+    // Microphone detection logic
+    let audioCtx, analyser, micStream, dataArray, running = false;
+    const micStatus = document.getElementById('mic-indicator');
+
+    function extinguishCandles() {
+      // Remove flame and glow
+      document.querySelectorAll('.flame').forEach(f => f.setAttribute('display', 'none'));
+      document.querySelectorAll('.glow').forEach(g => g.setAttribute('display', 'none'));
+      micStatus.textContent = '🟢 Candles Blown!';
+    }
+
+    function restoreCandles() {
+      document.querySelectorAll('.flame').forEach(f => f.setAttribute('display', ''));
+      document.querySelectorAll('.glow').forEach(g => g.setAttribute('display', ''));
+      micStatus.textContent = '🟢 Ready';
+    }
+
+    function detectBlow(volumeThreshold = 0.19, sampleWindow = 120) {
+      // "Blow" = sudden increase in average volume
+      analyser.getByteTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < sampleWindow; i++) {
+        let val = (dataArray[i] - 128) / 128;
+        sum += Math.abs(val);
+      }
+      let avg = sum / sampleWindow;
+      if (avg > volumeThreshold) {
+        if (running) {
+          extinguishCandles();
+          running = false;
+          setTimeout(() => restoreCandles(), 6000); // relight after 6s
+        }
+      }
+    }
+
+    async function startMic() {
+      try {
+        micStatus.textContent = '🟡 Listening...';
+        micStream = await navigator.mediaDevices.getUserMedia({audio: true});
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        dataArray = new Uint8Array(analyser.fftSize);
+
+        const source = audioCtx.createMediaStreamSource(micStream);
+        source.connect(analyser);
+
+        running = true;
+        micStatus.textContent = '🟢 Ready';
+        function loop() {
+          if (running) detectBlow();
+          requestAnimationFrame(loop);
+        }
+        loop();
+      } catch (err) {
+        micStatus.textContent = '🔴 Error: No Mic Access';
+        alert('Microphone access denied or not available.');
+      }
+    }
+
+    // Start mic on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(startMic, 800);
+    });
+
+    // Optional: Relight candles on click
+    document.getElementById('cake-svg').addEventListener('click', restoreCandles);
+
+  </script>
+</body>
+</html>
